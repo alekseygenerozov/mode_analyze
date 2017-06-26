@@ -79,9 +79,10 @@ def get_mode_info(mode_file, dens):
 	rhos=dens(xs)
 	xi_r=dat_mode['Re(xi_r)']
 	xi_ri=dat_mode['Im(xi_r)']
-	#assert np.all(dat_mode['Im(xi_r)']==0.)
+	#assert np.max(np.abs(xi_ri/xi_r))<1.0e-3
 	xi_h=dat_mode['Re(xi_h)']
 	xi_hi=dat_mode['Im(xi_h)']
+	#assert np.max(np.abs(xi_hi/xi_h))<1.0e-6
 	#assert np.all(dat_mode['Im(xi_h)']==0.)
 	
 	norm1=IUS(xs, rhos*xs**2.*(xi_r**2.+xi_ri**2.)).integral(xs[0], xs[-1])
@@ -91,8 +92,9 @@ def get_mode_info(mode_file, dens):
 	xi_h=xi_h/norm
 	
 	mode_dict['Q']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h)).integral(xs[0], xs[-1]))
-	##Definition of Q is ambiguous--should imaginary part be included?? 
+	##Definition of Q is confusing--should imaginary part be included?? 
 	mode_dict['Qi']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_ri+(mode_dict['l']+1.)*xi_hi)).integral(xs[0], xs[-1]))
+	assert np.abs(mode_dict['Qi']/mode_dict['Q'])<1.0e-6
 
 	mode_dict['xi_r']=xi_r
 	mode_dict['xi_h']=xi_h
@@ -101,7 +103,7 @@ def get_mode_info(mode_file, dens):
 	return mode_dict
 
 class ModeAnalyzer(object):
-	def __init__(self, StellarModel, ModeFiles, ModeKeys):
+	def __init__(self, StellarModel, ModeBase, n_min=-18, n_max=5):
 		'''
 		Class storing information about stellar oscillation modes for a given stellar 
 		model (stored in StellarModel--which must have a density, mass, and sound speed profile...)
@@ -119,10 +121,16 @@ class ModeAnalyzer(object):
 		self.rs=self.rs[order]
 
 		self.modes_dict={}
-		for idx,ff in enumerate(ModeFiles):
-			self.modes_dict[ModeKeys[idx]]=get_mode_info(ff, IUS(self.rs, self.rhos))
+		ns=range(n_min, n_max+1, 1)
+		# for idx,ff in enumerate(ModeFiles):
+		for nn in ns:
+			ff=ModeBase+'{:+d}.txt'.format(nn)
+			self.modes_dict[nn]=get_mode_info(ff, IUS(self.rs, self.rhos))
 
 	def tidal_coupling(self, etas):
+		'''
+		Tidal coupling constant (see e.g. Stone, Kuepper and Ostriker 2016)
+		'''
 		Ts=np.zeros(len(etas))
 		for key in self.modes_dict:
 			Q=self.modes_dict[key]['Q']
@@ -135,6 +143,10 @@ class ModeAnalyzer(object):
 		return Ts
 
 	def get_mode_vel(self, key, capt_params, m):
+		'''
+		Velocity of a particular mode (specified by key). capt_params gives the masses of the two bodies and 
+		the pericenter.
+		'''
 		mode_dict=self.modes_dict[key]
 		Q=mode_dict['Q']
 		wa=mode_dict['omega']
