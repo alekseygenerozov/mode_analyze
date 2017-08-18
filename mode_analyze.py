@@ -5,10 +5,14 @@ import subprocess
 import astropy.units as u
 import cgs_const as cgs
 from astropy.io import ascii
+import astropy.constants as const
 import numpy as np
 import math
 
 import mesa_reader
+
+def log_interp(x, xs, ys, **kwargs):
+	return np.exp(IUS(np.log(xs),np.log(ys), **kwargs)(np.log(x)))
 
 def prep_mesa(base):
 	'''
@@ -110,15 +114,21 @@ class ModeAnalyzer(object):
 		'''
 		M=np.max(StellarModel.mass)
 		R=np.max(StellarModel.R)
+		print M,R
 
-		self.rhos=StellarModel.Rho/(M/R**3.)
-		self.rs=StellarModel.R/R
+		self.rhos=(StellarModel.Rho/(M/R**3.)).cgs
+		self.rs=(StellarModel.R/R).cgs
+		self.ms=(StellarModel.mass/M).cgs
 		##Hard-code gamma_ad=5/3 gas for now...
-		self.cs=((5./3.)*StellarModel.P/StellarModel.Rho)**0.5/(cgs.G*M/R)**0.5
+		self.cs=(((5./3.)*StellarModel.P/StellarModel.Rho)**0.5/(const.G*M/R)**0.5).cgs
+		##Escape velocity considering only layers below...
+		
 		order=np.argsort(self.rs)
 		self.rhos=self.rhos[order]
 		self.cs=self.cs[order]
 		self.rs=self.rs[order]
+		self.ms=self.ms[order]
+		self.v_esc=(self.ms/self.rs)**0.5
 
 		self.modes_dict={}
 		ns=range(n_min, n_max+1, 1)
@@ -132,6 +142,9 @@ class ModeAnalyzer(object):
 		Tidal coupling constant (see e.g. Stone, Kuepper and Ostriker 2016)
 		'''
 		Ts=np.zeros(len(etas))
+		self.g=np.zeros(len(etas))
+		self.p=np.zeros(len(etas))
+		self.f=np.zeros(len(etas))
 		for key in self.modes_dict:
 			Q=self.modes_dict[key]['Q']
 			l=self.modes_dict[key]['l']
@@ -139,13 +152,20 @@ class ModeAnalyzer(object):
 			ys=etas*wa
 			for m in range(-int(l), int(l)+1):
 				Is=I(ys, l, m)
-				Ts+=2.0*np.pi**2.*Q**2.*((Wlm(l,m)/(2.0*np.pi)*2.**1.5*etas)*Is)**2.
+				tmp=2.0*np.pi**2.*Q**2.*((Wlm(l,m)/(2.0*np.pi)*2.**1.5*etas)*Is)**2.
+				Ts+=tmp
+				if key<0:
+					self.g=self.g+tmp
+				elif key==0:
+					self.f=self.f+tmp
+				else:
+					self.p=self.p+tmp
+
 		return Ts
 
 	def get_mode_vel(self, key, capt_params, m):
 		'''
-		Velocity of a particular mode (specified by key). capt_params gives the masses of the two bodies and 
-		the pericenter.
+		Shell averaged velocity of a particular mode (specified by key). capt_params gives the masses of the two bodies the pericenter.
 		'''
 		mode_dict=self.modes_dict[key]
 		Q=mode_dict['Q']
@@ -157,10 +177,31 @@ class ModeAnalyzer(object):
 		lam=capt_params['lam']
 
 		eta1=eta(capt_params)
-		pre=0.5*np.pi*lam**-3.*Q*(Wlm(l,m)/(2.0*np.pi)*2.**1.5*eta1)*I([eta1*wa], l, m)
+		pre=(np.pi)**0.5*lam**(-(l+1.))*Q*(Wlm(l,m)/(2.0*np.pi)*2.**1.5*eta1)*I([eta1*wa], l, m)
 
 		mode_vels=pre*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5
 		return xs, mode_vels
+
+
+	def get_mode_vel_tot(self, capt_params):
+		eta1=eta(capt_params)
+		v_mode_2_regrid=0.
+		lam=capt_params['lam']
+		for key in self.modes_dict.keys():
+			v_mode_2=0.
+			mode_dict=self.modes_dict[key]
+			xs=mode_dict['xs']
+			Q=mode_dict['Q']
+			l=mode_dict['l']
+			wa=mode_dict['omega']
+			xi_r=mode_dict['xi_r']
+			xi_h=mode_dict['xi_h']
+			for m in range(-int(l), int(l)+1):
+				a_alpha=2.*np.pi*lam**(-(l+1.))*Q*(Wlm(l,m)/(2.0*np.pi)*2.**1.5*eta1)*I([eta1*wa], l, m)
+				v_mode_2=v_mode_2+(a_alpha**2.*(xi_r**2.+l*(l+1.)*xi_h**2.))/(4.*np.pi)
+			v_mode_2_regrid=v_mode_2_regrid+log_interp(self.rs, xs[1:], v_mode_2[1:])
+		return self.rs, v_mode_2_regrid**0.5
+
 
 	def get_sf_rm(self, mode, capt_params, m, ri=0.99):
 	    '''
@@ -183,17 +224,17 @@ class ModeAnalyzer(object):
 class n32_poly(object):
 	def __init__(self):
 		dat_poly=np.genfromtxt('poly32.tsv')
-		self.R=dat_poly[:,0]
-		self.Rho=dat_poly[:,1]
-		self.mass=[IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R]
-		self.cs=(0.53*(5./3.)*(self.Rho/self.Rho[0])**(2./3.))**0.5*(cgs.G*self.mass[-1]/self.R[-1])**0.5
-		self.P=self.cs**2.*self.Rho/(5./3.)
+		self.R=u.Quantity(dat_poly[:,0])
+		self.Rho=u.Quantity(dat_poly[:,1])
+		self.mass=u.Quantity([IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R])
+		self.cs=u.Quantity((0.53*(5./3.)*(self.Rho/self.Rho[0])**(2./3.))**0.5*(cgs.G*self.mass[-1]/self.R[-1])**0.5)
+		self.P=u.Quantity(self.cs**2.*self.Rho/(5./3.))
 
 class n3_poly(object):
 	def __init__(self):
 		dat_poly=np.genfromtxt('poly3.tsv')
-		self.R=dat_poly[:,0]
-		self.Rho=dat_poly[:,1]
-		self.mass=[IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R]
-		self.cs=(0.85*(5./3.)*(self.Rho/self.Rho[0])**(1./3.))**0.5*(cgs.G*self.mass[-1]/self.R[-1])**0.5
-		self.P=self.cs**2.*self.Rho/(5./3.)
+		self.R=u.Quantity(dat_poly[:,0])
+		self.Rho=u.Quantity(dat_poly[:,1])
+		self.mass=u.Quantity([IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R])
+		self.cs=u.Quantity((0.85*(5./3.)*(self.Rho/self.Rho[0])**(1./3.))**0.5*(cgs.G*self.mass[-1]/self.R[-1])**0.5)
+		self.P=u.Quantity(self.cs**2.*self.Rho/(5./3.))
