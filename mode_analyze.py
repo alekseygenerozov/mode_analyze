@@ -13,6 +13,14 @@ import mesa_reader
 
 def log_interp(x, xs, ys, **kwargs):
 	return np.exp(IUS(np.log(xs),np.log(ys), **kwargs)(np.log(x)))
+	
+def log_integral(x1, x2, xs, ys):
+	'''
+	Compute \int_{u1}^{u2} e^u y(u) du, where u is log(x), u1=log(x1), and u2=log(x2). 
+	y(u) is conputed from an interpolating spline constructed from xs and ys
+	'''
+	us=np.log(xs)
+	return IUS(us, ys*np.exp(us)).integral(np.log(x1), np.log(x2))
 
 def prep_mesa(base):
 	'''
@@ -83,19 +91,23 @@ def get_mode_info(mode_file, dens):
 	rhos=dens(xs)
 	xi_r=dat_mode['Re(xi_r)']
 	xi_ri=dat_mode['Im(xi_r)']
-	#assert np.max(np.abs(xi_ri/xi_r))<1.0e-3
 	xi_h=dat_mode['Re(xi_h)']
 	xi_hi=dat_mode['Im(xi_h)']
-	#assert np.max(np.abs(xi_hi/xi_h))<1.0e-6
+	if np.any(np.abs(xi_ri)>0):
+		print np.max(np.abs(xi_ri[1:]/xi_r[1:]))
+	if np.any(np.abs(xi_hi)>0):	
+		print np.max(np.abs(xi_hi[1:]/xi_h[1:]))
 	#assert np.all(dat_mode['Im(xi_h)']==0.)
-	
-	norm1=IUS(xs, rhos*xs**2.*(xi_r**2.+xi_ri**2.)).integral(xs[0], xs[-1])
-	norm2=(mode_dict['l']+1.)*mode_dict['l']*IUS(xs, rhos*xs**2.*(xi_h**2.+xi_hi**2.)).integral(xs[0], xs[-1])
+	# norm1=IUS(xs, rhos*xs**2.*(xi_r**2.+xi_ri**2.)).integral(xs[0], xs[-1])
+	# norm2=(mode_dict['l']+1.)*mode_dict['l']*IUS(xs, rhos*xs**2.*(xi_h**2.+xi_hi**2.)).integral(xs[0], xs[-1])
+	norm1=IUS(xs, rhos*xs**2.*xi_r**2.).integral(xs[0], xs[-1])
+	norm2=(mode_dict['l']+1.)*mode_dict['l']*IUS(xs, rhos*xs**2.*xi_h**2.).integral(xs[0], xs[-1])
 	norm=(norm1+norm2)**0.5
 	xi_r=xi_r/norm
 	xi_h=xi_h/norm
 	
 	mode_dict['Q']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h)).integral(xs[0], xs[-1]))
+	# mode_dict['Q']=np.abs(log_integral(xs[1], xs[-1], xs[1:], xs[1:]**2*rhos[1:]*mode_dict['l']*(xs[1:]**(mode_dict['l']-1.))*(xi_r[1:]+(mode_dict['l']+1.)*xi_h[1:])))
 	##Definition of Q is confusing--should imaginary part be included?? 
 	mode_dict['Qi']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_ri+(mode_dict['l']+1.)*xi_hi)).integral(xs[0], xs[-1]))
 	assert np.abs(mode_dict['Qi']/mode_dict['Q'])<1.0e-6
@@ -114,7 +126,8 @@ class ModeAnalyzer(object):
 		'''
 		M=np.max(StellarModel.mass)
 		R=np.max(StellarModel.R)
-		print M,R
+		self.M=M
+		self.R=R
 
 		self.rhos=(StellarModel.Rho/(M/R**3.)).cgs
 		self.rs=(StellarModel.R/R).cgs
@@ -128,7 +141,10 @@ class ModeAnalyzer(object):
 		self.cs=self.cs[order]
 		self.rs=self.rs[order]
 		self.ms=self.ms[order]
-		self.v_esc=(self.ms/self.rs)**0.5
+		self.v_esc_o=(self.ms/self.rs)**0.5
+		self.v_esc=((self.ms/self.rs)+np.array([4.*np.pi*log_integral(rr, self.rs[-1], self.rs, self.rs*self.rhos) for rr in self.rs]))**0.5
+		self.etas=np.linspace(0.7, 10, 100)
+		self.cache={}
 
 		self.modes_dict={}
 		ns=range(n_min, n_max+1, 1)
@@ -137,87 +153,144 @@ class ModeAnalyzer(object):
 			ff=ModeBase+'{:+d}.txt'.format(nn)
 			self.modes_dict[nn]=get_mode_info(ff, IUS(self.rs, self.rhos))
 
-	def tidal_coupling(self, etas):
+	def tidal_coupling_alpha(self, key, m):
 		'''
-		Tidal coupling constant (see e.g. Stone, Kuepper and Ostriker 2016)
+		Tidal coupling constant for a particular mode for a fixed grid of etas.
 		'''
-		Ts=np.zeros(len(etas))
-		self.g=np.zeros(len(etas))
-		self.p=np.zeros(len(etas))
-		self.f=np.zeros(len(etas))
-		for key in self.modes_dict:
+		keyb='T_{0}_{1}'.format(key, m)
+		if not keyb in self.cache:
 			Q=self.modes_dict[key]['Q']
 			l=self.modes_dict[key]['l']
 			wa=self.modes_dict[key]['omega']
-			ys=etas*wa
-			for m in range(-int(l), int(l)+1):
-				Is=I(ys, l, m)
-				tmp=2.0*np.pi**2.*Q**2.*((Wlm(l,m)/(2.0*np.pi)*2.**1.5*etas)*Is)**2.
-				Ts+=tmp
-				if key<0:
-					self.g=self.g+tmp
-				elif key==0:
-					self.f=self.f+tmp
-				else:
-					self.p=self.p+tmp
 
-		return Ts
+			ys=self.etas*wa
+			Is=I(ys, l, m)
+			self.cache[keyb]=2.0*np.pi**2.*Q**2.*((Wlm(l,m)/(2.0*np.pi)*2.**1.5*self.etas)*Is)**2.
+		return self.cache[keyb]
 
-	def get_mode_vel(self, key, capt_params, m):
+	def tidal_coupling(self):
 		'''
-		Shell averaged velocity of a particular mode (specified by key). capt_params gives the masses of the two bodies the pericenter.
+		Tidal coupling constant (see e.g. Stone, Kuepper and Ostriker 2016)
+		'''
+		if not hasattr(self, 'T'):
+			self.T=np.zeros(len(self.etas))
+			self.g=np.zeros(len(self.etas))
+			self.p=np.zeros(len(self.etas))
+			self.f=np.zeros(len(self.etas))
+			for key in self.modes_dict:
+				l=self.modes_dict[key]['l']
+				for m in range(-int(l), int(l)+1):
+					tmp=self.tidal_coupling_alpha(key, m)
+					self.T+=tmp
+					if key<0:
+						self.g=self.g+tmp
+					elif key==0:
+						self.f=self.f+tmp
+					else:
+						self.p=self.p+tmp
+		return self.T
+
+	##Initial semi-major axis of orbit (not accounting for mass loss).
+	def a0(self, capt_params, delta_m=0.):
+		'''
+		Getting the initial semi-major axis after tidal capture
+		'''
+		mc=capt_params['mc']
+		lam=capt_params['lam']
+		vinf=capt_params['vinf']
+		capt_params['ms']=self.M
+		mtot=mc+self.M
+		mu=mc*self.M/mtot
+		mtot1=mtot-delta_m	
+		mu1=mc*(self.M-delta_m)/mtot1
+
+
+		eta1=eta(capt_params).cgs.value
+		Ts=self.T
+		T1=log_interp(eta1, self.etas, Ts)
+
+		a0=0.5*((const.G*mtot1*mu1)/(-0.5*mu*vinf**2.+T1*lam**-6.*const.G*self.M**2./self.R))
+		if a0<0:
+			return np.inf*u.cm
+		return a0
+
+	##Initial eccentricity of orbit (not accounting for mass loss)
+	def e0(self, capt_params, delta_m=0.*u.g):
+		##Extract paramaters
+		mc=capt_params['mc']
+		lam=capt_params['lam']
+		vinf=capt_params['vinf']
+		capt_params['ms']=self.M
+		mtot=mc+self.M
+		mu=mc*self.M/mtot	
+		#Tidal radius, pericenter, and velocity at pericenter.
+		rt=(mc/self.M)**(1./3.)*self.R
+		rp=lam*rt
+		vp=vinf*(1.+2.*const.G*mtot/rp/vinf**2.)**0.5
+		#Semi-major axis, total mass, and reduced mass (accounting for mass loss)
+		a=self.a0(capt_params, delta_m)
+		mtot1=mtot-delta_m	
+		mu1=mc*(self.M-delta_m)/mtot1
+		#Use angular momentum conservation to find pericenter of new orbit.
+		v1=vp*mc/(self.M+mc)
+		r1=rp*mc/(self.M+mc)
+		ang_momentum=mu*rp*vp-delta_m*r1*v1
+
+		return (1.-(ang_momentum)**2./(mu1**2.*mtot1*a*const.G))**0.5
+
+	def get_mode_vel(self, key, m, capt_params):
+		'''
+		Shell averaged velocity of a particular mode (specified by key and m). capt_params gives the masses of the two bodies the pericenter.
 		'''
 		mode_dict=self.modes_dict[key]
-		Q=mode_dict['Q']
-		wa=mode_dict['omega']
 		l=float(mode_dict['l'])
 		xi_r=mode_dict['xi_r']
 		xi_h=mode_dict['xi_h']
-		xs=mode_dict['xs']
+		eta1=eta(capt_params)
 		lam=capt_params['lam']
 
-		eta1=eta(capt_params)
-		pre=(np.pi)**0.5*lam**(-(l+1.))*Q*(Wlm(l,m)/(2.0*np.pi)*2.**1.5*eta1)*I([eta1*wa], l, m)
+		Ts=self.tidal_coupling_alpha(key, m)
+		if np.all(Ts==0):
+			T1=0
+		else:
+			T1=log_interp(eta1, self.etas, Ts)
 
-		mode_vels=pre*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5
-		return xs, mode_vels
+		mode_vels=(2.*T1/(4.*np.pi))**0.5*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5*lam**-3.
+		return mode_vels
 
 
 	def get_mode_vel_tot(self, capt_params):
+		'''
+		Get total rms velocity adding all of the modes together.
+		'''
 		eta1=eta(capt_params)
 		v_mode_2_regrid=0.
 		lam=capt_params['lam']
 		for key in self.modes_dict.keys():
-			v_mode_2=0.
 			mode_dict=self.modes_dict[key]
+			v_mode_2=0.
 			xs=mode_dict['xs']
-			Q=mode_dict['Q']
 			l=mode_dict['l']
-			wa=mode_dict['omega']
-			xi_r=mode_dict['xi_r']
-			xi_h=mode_dict['xi_h']
-			for m in range(-int(l), int(l)+1):
-				a_alpha=2.*np.pi*lam**(-(l+1.))*Q*(Wlm(l,m)/(2.0*np.pi)*2.**1.5*eta1)*I([eta1*wa], l, m)
-				v_mode_2=v_mode_2+(a_alpha**2.*(xi_r**2.+l*(l+1.)*xi_h**2.))/(4.*np.pi)
+			v_mode_2=np.sum([self.get_mode_vel(key, m, capt_params)**2. for m in range(-int(l), int(l)+1)], axis=0)
 			v_mode_2_regrid=v_mode_2_regrid+log_interp(self.rs, xs[1:], v_mode_2[1:])
-		return self.rs, v_mode_2_regrid**0.5
+		return v_mode_2_regrid**0.5
 
 
-	def get_sf_rm(self, mode, capt_params, m, ri=0.99):
-	    '''
-	    Get shock formation location from Eq. 7 of Ro&Matzner 2017
-	    
-	    NB by default, the mode is deposited near the outer layers of the star unlike in Ro&Matzner
-	    where it is deposited deep inside of the star. xi is the initial radius of the Perturbation
-	    '''
-	    Lmax=2.0*np.pi*self.rs**2.*self.rhos*self.cs**3.
+	def get_sf_rm(self, mode, m, capt_params,  ri=0.99):
+		'''
+		Get shock formation location from Eq. 7 of Ro&Matzner 2017
+		
+		NB by default, the mode is deposited near the outer layers of the star unlike in Ro&Matzner
+		where it is deposited deep inside of the star. xi is the initial radius of the Perturbation
+		'''
+		Lmax=2.0*np.pi*self.rs**2.*self.rhos*self.cs**3.
 
-	    xs2,vs=self.get_mode_vel(mode, capt_params, m)
-	    ud=IUS(xs2, vs).derivative(1)(ri)
-	    
-	    Lmaxi=IUS(self.rs, Lmax)(ri)
-	    g=5./3.
-	    return self.rs, [IUS(self.rs, -ud*(g+1.)/2.*(Lmax/Lmaxi)**0.5/self.cs).integral(ri, rr) for rr in self.rs]
+		xs2,vs=self.get_mode_vel(mode, m, capt_params)
+		ud=IUS(xs2, vs).derivative(1)(ri)
+		
+		Lmaxi=IUS(self.rs, Lmax)(ri)
+		g=5./3.
+		return self.rs, [IUS(self.rs, -ud*(g+1.)/2.*(Lmax/Lmaxi)**0.5/self.cs).integral(ri, rr) for rr in self.rs]
 	
 
 
