@@ -191,57 +191,97 @@ class ModeAnalyzer(object):
 		return self.T
 
 	##Initial semi-major axis of orbit (not accounting for mass loss).
-	def a0(self, capt_params, delta_m=0.):
+	def a0(self, capt_params, mass_loss=True):
 		'''
 		Getting the initial semi-major axis after tidal capture
 		'''
+		#Calculate mass lost at pericenter
+		delta_m=0.*u.g
+		if mass_loss:
+			delta_m=self.delta_m(capt_params)*self.M
+
 		mc=capt_params['mc']
 		lam=capt_params['lam']
-		vinf=capt_params['vinf']
 		capt_params['ms']=self.M
 		mtot=mc+self.M
 		mu=mc*self.M/mtot
 		mtot1=mtot-delta_m	
 		mu1=mc*(self.M-delta_m)/mtot1
 
-
 		eta1=eta(capt_params).cgs.value
 		Ts=self.T
 		T1=log_interp(eta1, self.etas, Ts)
 
-		a0=0.5*((const.G*mtot1*mu1)/(-0.5*mu*vinf**2.+T1*lam**-6.*const.G*self.M**2./self.R))
+		if 'vinf' in capt_params:
+			a0=0.5*((const.G*mtot1*mu1)/(-0.5*mu*vinf**2.+en_diss(capt_params)))
+		else:
+			a0=0.5*((const.G*mtot1*mu1)/(0.5*(const.G*mtot*mu/capt_params['a'])+en_diss(capt_params)))
+
 		if a0<0:
 			return np.inf*u.cm
 		return a0
 
 	##Initial eccentricity of orbit (not accounting for mass loss)
-	def e0(self, capt_params, delta_m=0.*u.g):
+	def e0(self, capt_params, mass_loss=True):
+		#Calculate mass lost at pericenter
+		delta_m=0.*u.g
+		if mass_loss:
+			delta_m=self.delta_m(capt_params)*self.M
+
 		##Extract paramaters
 		mc=capt_params['mc']
 		lam=capt_params['lam']
-		vinf=capt_params['vinf']
 		capt_params['ms']=self.M
 		mtot=mc+self.M
 		mu=mc*self.M/mtot	
 		#Tidal radius, pericenter, and velocity at pericenter.
 		rt=(mc/self.M)**(1./3.)*self.R
 		rp=lam*rt
-		vp=vinf*(1.+2.*const.G*mtot/rp/vinf**2.)**0.5
+		if 'vinf' in capt_params:
+			vp=vinf*(1.+2.*const.G*mtot/rp/vinf**2.)**0.5
+		else:
+			ecc=1.-rp/capt_params['a']
+			vp=rp*(const.G*mtot*(1.+ecc)/rp)**0.5
 		#Semi-major axis, total mass, and reduced mass (accounting for mass loss)
 		a=self.a0(capt_params, delta_m)
 		mtot1=mtot-delta_m	
+
 		mu1=mc*(self.M-delta_m)/mtot1
 		#Use angular momentum conservation to find pericenter of new orbit.
 		v1=vp*mc/(self.M+mc)
 		r1=rp*mc/(self.M+mc)
-		ang_momentum=mu*rp*vp-delta_m*r1*v1
 
+		ang_momentum=mu*rp*vp-delta_m*r1*v1
 		return (1.-(ang_momentum)**2./(mu1**2.*mtot1*a*const.G))**0.5
+
+	# def orb_seq(self, capt_params, mass_loss=True):
+	# 	a=np.empty(10)
+	# 	ecc=np.empty(10)
+	# 	mtot=np.empty(10)
+	# 	mu=np.empty(10)
+
+	# 	mc=capt_params['mc']
+	# 	##Parameters
+	# 	a[0]=self.a0(capt_params, mass_loss)
+	# 	ecc[0]=self.e0(capt_params, mass_loss)
+	# 	rp=a[0]*(1.-ecc[0])
+	# 	mtot[0]=mc+self._M_pert
+	# 	mu[0]=self._M_pert*capt_params['mc']/mtot
+
+	# 	for ii in range(1, 10):
+	# 		mtot[ii]=self._M_pert+mc
+	# 		mu[ii]=self._M_pert*mc/(mtot)
+
+	# 		a[ii]=const.G*mtot[ii]*mu[ii]/(0.5*(const.G*mtot[ii-1]*mu[ii-1])/a[i-1]-en_diss(capt_params))
+	# 		ang_momentum=mu*(const.G*mtot*a[ii-1]*(1.-ecc[ii-1]**2.))**0.5
+	# 		ecc[ii]=(1.-(ang_momentum)**2./(mu[ii]**2.*mtot[ii]*a[ii]*const.G))**0.5
+	# 		rp=a[ii]*(1.-ecc[ii])
 
 	def get_mode_vel(self, key, m, capt_params):
 		'''
 		Shell averaged velocity of a particular mode (specified by key and m). capt_params gives the masses of the two bodies the pericenter.
 		'''
+		capt_params['ms']=self.M
 		mode_dict=self.modes_dict[key]
 		l=float(mode_dict['l'])
 		xi_r=mode_dict['xi_r']
@@ -258,11 +298,11 @@ class ModeAnalyzer(object):
 		mode_vels=(2.*T1/(4.*np.pi))**0.5*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5*lam**-3.
 		return mode_vels
 
-
 	def get_mode_vel_tot(self, capt_params):
 		'''
 		Get total rms velocity adding all of the modes together.
 		'''
+		capt_params['ms']=self.M
 		eta1=eta(capt_params)
 		v_mode_2_regrid=0.
 		lam=capt_params['lam']
@@ -275,6 +315,18 @@ class ModeAnalyzer(object):
 			v_mode_2_regrid=v_mode_2_regrid+log_interp(self.rs, xs[1:], v_mode_2[1:])
 		return v_mode_2_regrid**0.5
 
+	def delta_m(self, capt_params):
+		capt_params['ms']=self.M
+		vs=self.get_mode_vel_tot(capt_params)
+		return 1.-log_interp(1., vs/self.v_esc, self.ms)
+
+	def en_diss(self, capt_params):
+		Ts=self.T
+		capt_params['ms']=self._M_pert
+		eta1=eta(capt_params)
+		T1=log_interp(eta1, self.etas, Ts)
+
+		return T1*(const.G*self.M**2./self.R)*capt_params['lam']**-6.
 
 	def get_sf_rm(self, mode, m, capt_params,  ri=0.99):
 		'''
