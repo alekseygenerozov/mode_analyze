@@ -11,6 +11,8 @@ import math
 
 import mesa_reader
 
+
+
 def log_interp(x, xs, ys, **kwargs):
 	return np.exp(IUS(np.log(xs),np.log(ys), **kwargs)(np.log(x)))
 	
@@ -74,7 +76,6 @@ def eta(capt_params):
 	
 	return (ms/(mc+ms))**0.5*(lam*(mc/ms)**(1./3.))**1.5
 
-
 def get_mode_info(mode_file, dens):
 	'''
 	Extract frequency and multipole order of the mode from GYRE output. Second argument is
@@ -119,7 +120,7 @@ def get_mode_info(mode_file, dens):
 	return mode_dict
 
 class ModeAnalyzer(object):
-	def __init__(self, StellarModel, ModeBase, n_min=-18, n_max=5):
+	def __init__(self, StellarModel, ModeBase, n_min=-18, n_max=5, ls=[2]):
 		'''
 		Class storing information about stellar oscillation modes for a given stellar 
 		model (stored in StellarModel--which must have a density, mass, and sound speed profile...)
@@ -141,8 +142,8 @@ class ModeAnalyzer(object):
 		self.cs=self.cs[order]
 		self.rs=self.rs[order]
 		self.ms=self.ms[order]
-		self.v_esc_o=(self.ms/self.rs)**0.5
-		self.v_esc=((self.ms/self.rs)+np.array([4.*np.pi*log_integral(rr, self.rs[-1], self.rs, self.rs*self.rhos) for rr in self.rs]))**0.5
+		self.v_esc_o=2.**0.5*(self.ms/self.rs)**0.5
+		self.v_esc=2.**0.5*((self.ms/self.rs)+np.array([4.*np.pi*log_integral(rr, self.rs[-1], self.rs, self.rs*self.rhos) for rr in self.rs]))**0.5
 		self.etas=np.linspace(0.7, 10, 100)
 		self.cache={}
 
@@ -150,8 +151,9 @@ class ModeAnalyzer(object):
 		ns=range(n_min, n_max+1, 1)
 		# for idx,ff in enumerate(ModeFiles):
 		for nn in ns:
-			ff=ModeBase+'{:+d}.txt'.format(nn)
-			self.modes_dict[nn]=get_mode_info(ff, IUS(self.rs, self.rhos))
+			for ll in ls:
+				ff=ModeBase+'{0:+d}.l{1}.txt'.format(nn,ll)
+				self.modes_dict[str(nn)+'_'+str(ll)]=get_mode_info(ff, IUS(self.rs, self.rhos))
 
 	def tidal_coupling_alpha(self, key, m):
 		'''
@@ -213,9 +215,9 @@ class ModeAnalyzer(object):
 		T1=log_interp(eta1, self.etas, Ts)
 
 		if 'vinf' in capt_params:
-			a0=0.5*((const.G*mtot1*mu1)/(-0.5*mu*vinf**2.+en_diss(capt_params)))
+			a0=0.5*((const.G*mtot1*mu1)/(-0.5*mu*capt_params['vinf']**2.+self.en_diss(capt_params)))
 		else:
-			a0=0.5*((const.G*mtot1*mu1)/(0.5*(const.G*mtot*mu/capt_params['a'])+en_diss(capt_params)))
+			a0=0.5*((const.G*mtot1*mu1)/(0.5*(const.G*mtot*mu/capt_params['a'])+self.en_diss(capt_params)))
 
 		if a0<0:
 			return np.inf*u.cm
@@ -238,12 +240,12 @@ class ModeAnalyzer(object):
 		rt=(mc/self.M)**(1./3.)*self.R
 		rp=lam*rt
 		if 'vinf' in capt_params:
-			vp=vinf*(1.+2.*const.G*mtot/rp/vinf**2.)**0.5
+			vp=capt_params['vinf']*(1.+2.*const.G*mtot/rp/capt_params['vinf']**2.)**0.5
 		else:
 			ecc=1.-rp/capt_params['a']
-			vp=rp*(const.G*mtot*(1.+ecc)/rp)**0.5
+			vp=(const.G*mtot*(1.+ecc)/rp)**0.5
 		#Semi-major axis, total mass, and reduced mass (accounting for mass loss)
-		a=self.a0(capt_params, delta_m)
+		a1=self.a0(capt_params, delta_m)
 		mtot1=mtot-delta_m	
 
 		mu1=mc*(self.M-delta_m)/mtot1
@@ -252,7 +254,7 @@ class ModeAnalyzer(object):
 		r1=rp*mc/(self.M+mc)
 
 		ang_momentum=mu*rp*vp-delta_m*r1*v1
-		return (1.-(ang_momentum)**2./(mu1**2.*mtot1*a*const.G))**0.5
+		return (1.-((ang_momentum)**2./(mu1**2.*mtot1*a1*const.G)))**0.5
 
 	# def orb_seq(self, capt_params, mass_loss=True):
 	# 	a=np.empty(10)
@@ -315,18 +317,32 @@ class ModeAnalyzer(object):
 			v_mode_2_regrid=v_mode_2_regrid+log_interp(self.rs, xs[1:], v_mode_2[1:])
 		return v_mode_2_regrid**0.5
 
+	def sonic(self, capt_params):
+		capt_params['ms']=self.M
+		vs=self.get_mode_vel_tot(capt_params)
+		if np.all(vs/self.cs<1.):
+			return 0.
+		return log_interp(1., vs/self.cs, self.rs)
+
 	def delta_m(self, capt_params):
 		capt_params['ms']=self.M
 		vs=self.get_mode_vel_tot(capt_params)
+		if np.all(vs/self.v_esc<1.):
+			return 0.
 		return 1.-log_interp(1., vs/self.v_esc, self.ms)
 
 	def en_diss(self, capt_params):
 		Ts=self.T
-		capt_params['ms']=self._M_pert
+		capt_params['ms']=self.M
 		eta1=eta(capt_params)
 		T1=log_interp(eta1, self.etas, Ts)
 
-		return T1*(const.G*self.M**2./self.R)*capt_params['lam']**-6.
+		return (T1*(const.G*self.M**2./self.R)*capt_params['lam']**-6.).cgs
+
+	def en_circ(self, capt_params):
+		rt=(capt_params['mc']/self.M)**(1./3.)*self.R
+		rp=capt_params['lam']*rt
+		return const.G*self.M*capt_params['mc']/4./rp
 
 	def get_sf_rm(self, mode, m, capt_params,  ri=0.99):
 		'''
