@@ -148,9 +148,9 @@ class ModeAnalyzer(object):
 		self.cache={}
 
 		self.modes_dict={}
-		ns=range(n_min, n_max+1, 1)
+		self.ns=range(n_min, n_max+1, 1)
 		# for idx,ff in enumerate(ModeFiles):
-		for nn in ns:
+		for nn in self.ns:
 			for ll in ls:
 				ff=ModeBase+'{0:+d}.l{1}.txt'.format(nn,ll)
 				self.modes_dict[str(nn)+'_'+str(ll)]=get_mode_info(ff, IUS(self.rs, self.rhos))
@@ -170,27 +170,28 @@ class ModeAnalyzer(object):
 			self.cache[keyb]=2.0*np.pi**2.*Q**2.*((Wlm(l,m)/(2.0*np.pi)*2.**1.5*self.etas)*Is)**2.
 		return self.cache[keyb]
 
-	def tidal_coupling(self):
+	def tidal_coupling(self, l):
 		'''
-		Tidal coupling constant (see e.g. Stone, Kuepper and Ostriker 2016)
+		Tidal coupling constant (see e.g. Stone, Kuepper and Ostriker 2016) 
 		'''
-		if not hasattr(self, 'T'):
-			self.T=np.zeros(len(self.etas))
+		if not hasattr(self, 'T_'+str(l)):
+			setattr(self, 'T_'+str(l), np.zeros(len(self.etas)))
+			T=getattr(self,  'T_'+str(l))
 			self.g=np.zeros(len(self.etas))
 			self.p=np.zeros(len(self.etas))
 			self.f=np.zeros(len(self.etas))
-			for key in self.modes_dict:
-				l=self.modes_dict[key]['l']
+			for nn in self.ns:
+				key=str(nn)+'_'+str(l)
 				for m in range(-int(l), int(l)+1):
 					tmp=self.tidal_coupling_alpha(key, m)
-					self.T+=tmp
+					T+=tmp
 					if key<0:
 						self.g=self.g+tmp
 					elif key==0:
 						self.f=self.f+tmp
 					else:
 						self.p=self.p+tmp
-		return self.T
+		return getattr(self, 'T_'+str(l))
 
 	##Initial semi-major axis of orbit (not accounting for mass loss).
 	def a0(self, capt_params, mass_loss=True):
@@ -297,10 +298,10 @@ class ModeAnalyzer(object):
 		else:
 			T1=log_interp(eta1, self.etas, Ts)
 
-		mode_vels=(2.*T1/(4.*np.pi))**0.5*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5*lam**-3.
+		mode_vels=(2.*T1/(4.*np.pi))**0.5*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5*lam**(-(l+1))
 		return mode_vels
 
-	def get_mode_vel_tot(self, capt_params):
+	def get_mode_vel_tot(self, capt_params, lmax=2):
 		'''
 		Get total rms velocity adding all of the modes together.
 		'''
@@ -313,6 +314,8 @@ class ModeAnalyzer(object):
 			v_mode_2=0.
 			xs=mode_dict['xs']
 			l=mode_dict['l']
+			if l>lmax:
+				continue
 			v_mode_2=np.sum([self.get_mode_vel(key, m, capt_params)**2. for m in range(-int(l), int(l)+1)], axis=0)
 			v_mode_2_regrid=v_mode_2_regrid+log_interp(self.rs, xs[1:], v_mode_2[1:])
 		return v_mode_2_regrid**0.5
@@ -324,9 +327,9 @@ class ModeAnalyzer(object):
 			return 0.
 		return log_interp(1., vs/self.cs, self.rs)
 
-	def delta_m(self, capt_params):
+	def delta_m(self, capt_params, lmax=2):
 		capt_params['ms']=self.M
-		vs=self.get_mode_vel_tot(capt_params)
+		vs=self.get_mode_vel_tot(capt_params, lmax)
 		if np.all(vs/self.v_esc<1.):
 			return 0.
 		return 1.-log_interp(1., vs/self.v_esc, self.ms)
