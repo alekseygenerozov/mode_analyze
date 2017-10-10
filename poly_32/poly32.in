@@ -1,0 +1,103 @@
+&constants
+/
+
+&model
+	model_type = 'POLY'
+	file = 'poly.h5'
+/
+
+&mode
+	l = 2
+	tag = 'l=2'
+/
+
+&mode
+        l = 3
+        tag = 'l=3'
+/
+
+&mode
+        l = 4
+        tag = 'l=4'
+/
+
+&mode
+        l = 5
+        tag = 'l=5'
+/
+
+
+&mode
+        l = 6
+        tag = 'l=6'
+/
+
+
+
+&osc
+/
+
+&num
+/
+
+&scan
+        grid_type = 'LINEAR'
+        freq_min = 0.01
+        freq_max = 20.
+        n_freq = 60
+        tag_list = 'l=2'
+/
+
+&scan
+        grid_type = 'LINEAR'
+        freq_min = 0.01
+        freq_max = 20.
+        n_freq = 60
+        tag_list = 'l=3'
+/
+
+&scan
+        grid_type = 'LINEAR'
+        freq_min = 0.01
+        freq_max = 20.
+        n_freq = 60
+        tag_list = 'l=4'
+/
+
+&scan
+        grid_type = 'LINEAR'
+        freq_min = 0.01
+        freq_max = 20.
+        n_freq = 60
+        tag_list = 'l=5'
+/
+
+
+&scan
+        grid_type = 'LINEAR'
+        freq_min = 0.01
+        freq_max = 20.
+        n_freq = 60
+        tag_list = 'l=6'
+/
+
+
+&grid
+    n_inner = 5
+    alpha_osc = 10
+    alpha_exp = 2
+/
+
+&ad_output
+	summary_file = 'poly32Msun.txt'
+	summary_file_format = 'TXT'
+	summary_item_list = 'l,n_pg,n_p,n_g,omega,E_norm'
+        mode_template = 'poly32.n%n.l%l.txt'                		! File-name template for mode files
+	mode_file_format = 'TXT'                   		! Format of mode files
+        mode_item_list = 'l,n_pg,omega,x,xi_r,xi_h'   		! Items to appear in mode files
+/	
+
+
+&nad_output
+/
+

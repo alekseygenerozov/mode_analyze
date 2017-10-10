@@ -60,6 +60,7 @@ def I(y, l, m):
 	tmp=bash_command('./IApprox "{0}" {1} {2}'.format(y_str, int(l), int(m))).lstrip('List(')
 	tmp=tmp.replace(')', '')
 	tmp=tmp.strip()
+
 	tmp=np.array(tmp.split(',')).astype(float)
 	return tmp
 	
@@ -257,28 +258,6 @@ class ModeAnalyzer(object):
 		ang_momentum=mu*rp*vp-delta_m*r1*v1
 		return (1.-((ang_momentum)**2./(mu1**2.*mtot1*a1*const.G)))**0.5
 
-	# def orb_seq(self, capt_params, mass_loss=True):
-	# 	a=np.empty(10)
-	# 	ecc=np.empty(10)
-	# 	mtot=np.empty(10)
-	# 	mu=np.empty(10)
-
-	# 	mc=capt_params['mc']
-	# 	##Parameters
-	# 	a[0]=self.a0(capt_params, mass_loss)
-	# 	ecc[0]=self.e0(capt_params, mass_loss)
-	# 	rp=a[0]*(1.-ecc[0])
-	# 	mtot[0]=mc+self._M_pert
-	# 	mu[0]=self._M_pert*capt_params['mc']/mtot
-
-	# 	for ii in range(1, 10):
-	# 		mtot[ii]=self._M_pert+mc
-	# 		mu[ii]=self._M_pert*mc/(mtot)
-
-	# 		a[ii]=const.G*mtot[ii]*mu[ii]/(0.5*(const.G*mtot[ii-1]*mu[ii-1])/a[i-1]-en_diss(capt_params))
-	# 		ang_momentum=mu*(const.G*mtot*a[ii-1]*(1.-ecc[ii-1]**2.))**0.5
-	# 		ecc[ii]=(1.-(ang_momentum)**2./(mu[ii]**2.*mtot[ii]*a[ii]*const.G))**0.5
-	# 		rp=a[ii]*(1.-ecc[ii])
 
 	def get_mode_vel(self, key, m, capt_params):
 		'''
