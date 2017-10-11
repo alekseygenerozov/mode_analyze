@@ -64,16 +64,14 @@ def I(y, l, m):
 	tmp=np.array(tmp.split(',')).astype(float)
 	return tmp
 
-@np.vectorize
 def I2(y, l, m):
 	if m==0:
 		if l==0:
 			return np.pi*(2.**(1./2.)*y)**(-1./3.)*airy((2**(1./2.)*y)**(2./3.))[0]
 		elif l==1:
-			if y<=4:
-	 			return (1.5288 + 0.79192*np.sqrt(y) - 0.86606*y + 0.14593*y**1.5)/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 1.6449*np.sqrt(y) - 1.2345*y + 0.19392*y**1.5))
-			else:
-				return (1.4119 + 18.158*np.sqrt(y) + 22.152*y)/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 12.249*np.sqrt(y) + 28.593*y))
+			f1=lambda y: (1.5288 + 0.79192*np.sqrt(y) - 0.86606*y + 0.14593*y**1.5)/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 1.6449*np.sqrt(y) - 1.2345*y + 0.19392*y**1.5))
+			f2= lambda y: (1.4119 + 18.158*np.sqrt(y) + 22.152*y)/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 12.249*np.sqrt(y) + 28.593*y))
+			return np.piecewise(y, [y<=4, y>4], [f1, f2])
 		elif l==2:
 			return (np.sqrt(1 + (2*np.sqrt(2)*y)/3.)*(0.78374 + 1.5039*np.sqrt(y) + 1.0073*y + 0.71115*y**1.5))/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 1.9128*np.sqrt(y) + 1.0384*y + 1.2883*y**1.5))
 		elif l==3:
