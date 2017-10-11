@@ -186,13 +186,14 @@ class ModeAnalyzer(object):
 				for m in range(-int(l), int(l)+1):
 					tmp=self.tidal_coupling_alpha(key, m)
 					T+=tmp
-					if key<0:
+					if nn<0:
 						self.g=self.g+tmp
-					elif key==0:
+					elif nn==0:
 						self.f=self.f+tmp
 					else:
 						self.p=self.p+tmp
 		return getattr(self, 'T_'+str(l))
+
 
 	##Initial semi-major axis of orbit (not accounting for mass loss).
 	def a0(self, capt_params, mass_loss=True):
@@ -264,6 +265,7 @@ class ModeAnalyzer(object):
 		Shell averaged velocity of a particular mode (specified by key and m). capt_params gives the masses of the two bodies the pericenter.
 		'''
 		capt_params['ms']=self.M
+		q=capt_params['ms']/capt_params['mc']
 		mode_dict=self.modes_dict[key]
 		l=float(mode_dict['l'])
 		xi_r=mode_dict['xi_r']
@@ -277,7 +279,7 @@ class ModeAnalyzer(object):
 		else:
 			T1=log_interp(eta1, self.etas, Ts)
 
-		mode_vels=(2.*T1/(4.*np.pi))**0.5*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5*lam**(-(l+1))
+		mode_vels=(2.*T1/(4.*np.pi))**0.5*((xi_r**2.+l*(l+1)*xi_h**2.))**0.5*lam**(-(l+1))*(q)**(1-(l+1.)/3.)
 		return mode_vels
 
 	def get_mode_vel_tot(self, capt_params, lmax=2):
