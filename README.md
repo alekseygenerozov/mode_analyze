@@ -10,6 +10,6 @@ poly*tsv -- tabulated polytropic models (first column is radius, second column i
 mode_analyze.py -- creates ModeAnalyzer object that organized basic info about the stellar model
 and associated oscillation modes. 
 
-poly_3, poly_32 -- contains mode data computed from GYRE version 5. 
+poly_3, poly_32 -- contains mode data for polytropic models from GYRE version 5. 
 
 example.ipynb -- show some examples of the the code in action (getting basic mode info, tidal coupling constants). 
