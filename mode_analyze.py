@@ -195,6 +195,21 @@ class ModeAnalyzer(object):
 		return getattr(self, 'T_'+str(l))
 
 
+	def en_tot(self, capt_params, lmax=2):
+		'''
+		Total energy deposited into the star
+		'''
+		capt_params['ms']=self.M
+		q=(capt_params['ms']/capt_params['mc']).cgs.value
+		delta_E=np.zeros(len(self.etas))
+
+		for l in range(2, lmax+1):
+			##Not sure about extra 1+q in the denominator
+			print self.tidal_coupling(l)*(q**-2.)*(q/(1.+q))**((2.*l+2)/3)*(self.etas**(2./3.))**(-2.*l-2.)
+			delta_E+=self.tidal_coupling(l)*(q**-2.)*(q/(1.+q))**((2.*l+2)/3)*(self.etas**(2./3.))**(-2.*l-2.)
+
+		return delta_E
+
 	##Initial semi-major axis of orbit (not accounting for mass loss).
 	def a0(self, capt_params, mass_loss=True):
 		'''
