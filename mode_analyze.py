@@ -10,7 +10,7 @@ import numpy as np
 import math
 
 import mesa_reader
-
+from scipy.special import airy
 
 
 def log_interp(x, xs, ys, **kwargs):
@@ -63,7 +63,29 @@ def I(y, l, m):
 
 	tmp=np.array(tmp.split(',')).astype(float)
 	return tmp
-	
+
+@np.vectorize
+def I2(y, l, m):
+	if m==0:
+		if l==0:
+			return np.pi*(2.**(1./2.)*y)**(-1./3.)*airy((2**(1./2.)*y)**(2./3.))[0]
+		elif l==1:
+			if y<=4:
+	 			return (1.5288 + 0.79192*np.sqrt(y) - 0.86606*y + 0.14593*y**1.5)/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 1.6449*np.sqrt(y) - 1.2345*y + 0.19392*y**1.5))
+			else:
+				return (1.4119 + 18.158*np.sqrt(y) + 22.152*y)/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 12.249*np.sqrt(y) + 28.593*y))
+		elif l==2:
+			return (np.sqrt(1 + (2*np.sqrt(2)*y)/3.)*(0.78374 + 1.5039*np.sqrt(y) + 1.0073*y + 0.71115*y**1.5))/(np.exp((2*np.sqrt(2)*y)/3.)*(1 + 1.9128*np.sqrt(y) + 1.0384*y + 1.2883*y**1.5))
+		elif l==3:
+			return ((1 + (2*np.sqrt(2)*y)/3.)*(0.58894 + 0.32381*np.sqrt(y) + 0.45605*y + 0.1522*y**1.5))/\
+			(np.exp((2*np.sqrt(2)*y)/3.)*(1. + 0.54766*np.sqrt(y) + 0.7613*y + 0.53016*y**1.5))
+		else:
+			return (y**2.*I2(y,-4 + l,0))/((-3. + l)*(-2 + 2.*l)) + ((-3 + 2*l)*I2(y,-1 + l,0))/(-2. + 2.*l)
+	elif m>0:
+		return -((np.sqrt(2)*y*I2(y,-1 + l,-1 + m))/(1.*l)) - I2(y,l,-1 + m) + (2. - (2.*(-1 + m))/(1.*l))*I2(y,1 + l,-1 + m)
+	else:
+		return (np.sqrt(2.)*y*I2(y,-1 + l,1 + m))/(1.*l) - I2(y,l,1 + m) + (2. + (2.*(1. + m))/(1.*l))*I2(y,1 + l,1 + m)
+
 def Wlm(l, m):
 	if ((l+m)/2.).is_integer():
 		return (2.**(1 - l)*np.sqrt(np.pi)*np.sqrt((math.factorial(l - m)*math.factorial(l + m))/(1 + 2*l)))/(math.factorial((l - m)/2.)*math.factorial((l + m)/2.))
@@ -167,7 +189,7 @@ class ModeAnalyzer(object):
 			wa=self.modes_dict[key]['omega']
 
 			ys=self.etas*wa
-			Is=I(ys, l, m)
+			Is=I2(ys, l, m)
 			self.cache[keyb]=2.0*np.pi**2.*Q**2.*((Wlm(l,m)/(2.0*np.pi)*2.**1.5*self.etas)*Is)**2.
 		return self.cache[keyb]
 
