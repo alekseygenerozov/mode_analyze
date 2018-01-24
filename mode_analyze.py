@@ -12,6 +12,8 @@ import math
 import mesa_reader
 from scipy.special import airy
 
+import os
+
 
 def log_interp(x, xs, ys, **kwargs):
 	return np.exp(IUS(np.log(xs),np.log(ys), **kwargs)(np.log(x)))
@@ -24,6 +26,10 @@ def log_integral(x1, x2, xs, ys):
 	us=np.log(xs)
 	return IUS(us, ys*np.exp(us)).integral(np.log(x1), np.log(x2))
 
+def integral(x1, x2, xs, ys):
+	return IUS(xs, ys).integral(x1, x2)
+
+
 def prep_mesa(base):
 	'''
 	Prepare mesa model for use with the ModeAnalyzer class below
@@ -33,6 +39,7 @@ def prep_mesa(base):
 	ld=mesa_reader.MesaLogDir(base+'/LOGS')
 	pidx=mesa_reader.MesaProfileIndex(base+'/LOGS/profiles.index')
 	idx_last=pidx.model_numbers[-1]
+	
 	prof=ld.profile_data(model_number=idx_last)
 
 	prof.R=(prof.R*u.R_sun).cgs
@@ -137,7 +144,7 @@ def get_mode_info(mode_file, dens):
 	mode_dict['xi_r']=xi_r
 	mode_dict['xi_h']=xi_h
 	mode_dict['xs']=xs
-	
+
 	return mode_dict
 
 class ModeAnalyzer(object):
@@ -230,7 +237,7 @@ class ModeAnalyzer(object):
 
 		return delta_E
 
-	##Initial semi-major axis of orbit (not accounting for mass loss).
+	##Initial semi-major axis of orbit (accounting for mass loss).
 	def a0(self, capt_params, mass_loss=True):
 		'''
 		Getting the initial semi-major axis after tidal capture
@@ -249,8 +256,8 @@ class ModeAnalyzer(object):
 		mu1=mc*(self.M-delta_m)/mtot1
 
 		eta1=eta(capt_params).cgs.value
-		Ts=self.T
-		T1=log_interp(eta1, self.etas, Ts)
+		# Ts=self.T
+		# T1=log_interp(eta1, self.etas, Ts)
 
 		if 'vinf' in capt_params:
 			a0=0.5*((const.G*mtot1*mu1)/(-0.5*mu*capt_params['vinf']**2.+self.en_diss(capt_params)))
@@ -261,7 +268,7 @@ class ModeAnalyzer(object):
 			return np.inf*u.cm
 		return a0
 
-	##Initial eccentricity of orbit (not accounting for mass loss)
+	##Initial eccentricity of orbit (accounting for mass loss)
 	def e0(self, capt_params, mass_loss=True):
 		#Calculate mass lost at pericenter
 		delta_m=0.*u.g
@@ -351,7 +358,7 @@ class ModeAnalyzer(object):
 		return 1.-log_interp(1., vs/self.v_esc, self.ms)
 
 	def en_diss(self, capt_params):
-		Ts=self.T
+		Ts=self.tidal_coupling(2)
 		capt_params['ms']=self.M
 		eta1=eta(capt_params)
 		T1=log_interp(eta1, self.etas, Ts)
@@ -383,7 +390,7 @@ class ModeAnalyzer(object):
 
 class n32_poly(object):
 	def __init__(self):
-		dat_poly=np.genfromtxt('poly32.tsv')
+		dat_poly=np.genfromtxt(os.path.join(os.path.dirname(__file__), 'poly32.tsv'))
 		self.R=u.Quantity(dat_poly[:,0])
 		self.Rho=u.Quantity(dat_poly[:,1])
 		self.mass=u.Quantity([IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R])
@@ -392,7 +399,7 @@ class n32_poly(object):
 
 class n3_poly(object):
 	def __init__(self):
-		dat_poly=np.genfromtxt('poly3.tsv')
+		dat_poly=np.genfromtxt(os.path.join(os.path.dirname(__file__), 'poly3.tsv'))
 		self.R=u.Quantity(dat_poly[:,0])
 		self.Rho=u.Quantity(dat_poly[:,1])
 		self.mass=u.Quantity([IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R])
