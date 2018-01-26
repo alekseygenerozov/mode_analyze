@@ -136,9 +136,12 @@ def get_mode_info(mode_file, dens):
 	xi_h=xi_h/norm
 	
 	mode_dict['Q']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h)).integral(xs[0], xs[-1]))
+	#mode_dict['Q']=log_integral(xs[0], xs[-1], xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h))
+
+
 	# mode_dict['Q']=np.abs(log_integral(xs[1], xs[-1], xs[1:], xs[1:]**2*rhos[1:]*mode_dict['l']*(xs[1:]**(mode_dict['l']-1.))*(xi_r[1:]+(mode_dict['l']+1.)*xi_h[1:])))
 	##Definition of Q is confusing--should imaginary part be included?? 
-	mode_dict['Qi']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_ri+(mode_dict['l']+1.)*xi_hi)).integral(xs[0], xs[-1]))
+	mode_dict['Qi']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_ri+(mode_dict['l']+1.)*xi_hi)).integral(xs[0], 0.99))
 	assert np.abs(mode_dict['Qi']/mode_dict['Q'])<1.0e-6
 
 	mode_dict['xi_r']=xi_r

@@ -83,8 +83,8 @@
 
 
 &grid
-    n_inner = 5
-    alpha_osc = 10
+    n_inner = 10
+    alpha_osc = 20
     alpha_exp = 2
 /
 
