@@ -13,6 +13,8 @@ import mesa_reader
 from scipy.special import airy
 
 import os
+np.seterr(invalid='raise')
+#u.seterr(invalid='raise')
 
 
 def log_interp(x, xs, ys, **kwargs):
@@ -116,17 +118,20 @@ def get_mode_info(mode_file, rs, dens,  ms1, gs1):
 	mode_dict['l']=float(mode_info['l'])
 	 
 	dat_mode=ascii.read(mode_file, data_start=5, header_start=4)
-	xs=dat_mode['x'][1:]
-	print xs[0]/rs[0]
+	xs=dat_mode['x']
+	##Make sure grid for mode file is consistent with that from stellar model.
+	##Take second radus in case first one is zero
+	filt=(xs>=rs[1])
+	xs=xs[filt]
 	rhos=IUS(rs, dens)(xs)
 	ms=IUS(rs, ms1)(xs)
-	gs=IUS(rs, gs1)(xs)
-	aux=IUS(rs[1:], (rs**4./gs1)[1:]).derivative(1)(xs)
+	gs=IUS(rs[1:], gs1[1:])(xs)
+	aux=IUS(rs[1:], (rs[1:]**4./gs1[1:])).derivative(1)(xs)
 
-	xi_r=dat_mode['Re(xi_r)'][1:]
-	xi_ri=dat_mode['Im(xi_r)'][1:]
-	xi_h=dat_mode['Re(xi_h)'][1:]
-	xi_hi=dat_mode['Im(xi_h)'][1:]
+	xi_r=dat_mode['Re(xi_r)'][filt]
+	xi_ri=dat_mode['Im(xi_r)'][filt]
+	xi_h=dat_mode['Re(xi_h)'][filt]
+	xi_hi=dat_mode['Im(xi_h)'][filt]
 	if np.any(np.abs(xi_ri)>0):
 		print np.max(np.abs(xi_ri[1:]/xi_r[1:]))
 	if np.any(np.abs(xi_hi)>0):	
@@ -144,11 +149,6 @@ def get_mode_info(mode_file, rs, dens,  ms1, gs1):
 		mode_dict['Q']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h)).integral(xs[0], xs[-1]))
 	else:
 		mode_dict['Q']=mode_dict['omega']**2.*abs(IUS(xs, xs**4.*rhos*(xi_r/gs+(xi_h/xs**3.)*aux)).integral(xs[0], xs[-1]))	
-
-	# mode_dict['Q']=np.abs(log_integral(xs[1], xs[-1], xs[1:], xs[1:]**2*rhos[1:]*mode_dict['l']*(xs[1:]**(mode_dict['l']-1.))*(xi_r[1:]+(mode_dict['l']+1.)*xi_h[1:])))
-	##Definition of Q is confusing--should imaginary part be included?? 
-	#mode_dict['Qi']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_ri+(mode_dict['l']+1.)*xi_hi)).integral(xs[0], 0.99))
-	#assert np.abs(mode_dict['Qi']/mode_dict['Q'])<1.0e-6
 
 	mode_dict['xi_r']=xi_r
 	mode_dict['xi_h']=xi_h
