@@ -104,7 +104,7 @@ def eta(capt_params):
 	
 	return (ms/(mc+ms))**0.5*(lam*(mc/ms)**(1./3.))**1.5
 
-def get_mode_info(mode_file, dens):
+def get_mode_info(mode_file, rs, dens,  ms1, gs1):
 	'''
 	Extract frequency and multipole order of the mode from GYRE output. Second argument is
 	intepolation function, which contains the the density profile of the model. 
@@ -116,12 +116,17 @@ def get_mode_info(mode_file, dens):
 	mode_dict['l']=float(mode_info['l'])
 	 
 	dat_mode=ascii.read(mode_file, data_start=5, header_start=4)
-	xs=dat_mode['x']
-	rhos=dens(xs)
-	xi_r=dat_mode['Re(xi_r)']
-	xi_ri=dat_mode['Im(xi_r)']
-	xi_h=dat_mode['Re(xi_h)']
-	xi_hi=dat_mode['Im(xi_h)']
+	xs=dat_mode['x'][1:]
+	print xs[0]/rs[0]
+	rhos=IUS(rs, dens)(xs)
+	ms=IUS(rs, ms1)(xs)
+	gs=IUS(rs, gs1)(xs)
+	aux=IUS(rs[1:], (rs**4./gs1)[1:]).derivative(1)(xs)
+
+	xi_r=dat_mode['Re(xi_r)'][1:]
+	xi_ri=dat_mode['Im(xi_r)'][1:]
+	xi_h=dat_mode['Re(xi_h)'][1:]
+	xi_hi=dat_mode['Im(xi_h)'][1:]
 	if np.any(np.abs(xi_ri)>0):
 		print np.max(np.abs(xi_ri[1:]/xi_r[1:]))
 	if np.any(np.abs(xi_hi)>0):	
@@ -135,14 +140,15 @@ def get_mode_info(mode_file, dens):
 	xi_r=xi_r/norm
 	xi_h=xi_h/norm
 	
-	mode_dict['Q']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h)).integral(xs[0], xs[-1]))
-	#mode_dict['Q']=log_integral(xs[0], xs[-1], xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h))
-
+	if mode_dict['omega']>0.5:
+		mode_dict['Q']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h)).integral(xs[0], xs[-1]))
+	else:
+		mode_dict['Q']=mode_dict['omega']**2.*abs(IUS(xs, xs**4.*rhos*(xi_r/gs+(xi_h/xs**3.)*aux)).integral(xs[0], xs[-1]))	
 
 	# mode_dict['Q']=np.abs(log_integral(xs[1], xs[-1], xs[1:], xs[1:]**2*rhos[1:]*mode_dict['l']*(xs[1:]**(mode_dict['l']-1.))*(xi_r[1:]+(mode_dict['l']+1.)*xi_h[1:])))
 	##Definition of Q is confusing--should imaginary part be included?? 
-	mode_dict['Qi']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_ri+(mode_dict['l']+1.)*xi_hi)).integral(xs[0], 0.99))
-	assert np.abs(mode_dict['Qi']/mode_dict['Q'])<1.0e-6
+	#mode_dict['Qi']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_ri+(mode_dict['l']+1.)*xi_hi)).integral(xs[0], 0.99))
+	#assert np.abs(mode_dict['Qi']/mode_dict['Q'])<1.0e-6
 
 	mode_dict['xi_r']=xi_r
 	mode_dict['xi_h']=xi_h
@@ -173,6 +179,7 @@ class ModeAnalyzer(object):
 		self.cs=self.cs[order]
 		self.rs=self.rs[order]
 		self.ms=self.ms[order]
+		self.gs=self.ms/self.rs**2.
 		self.v_esc_o=2.**0.5*(self.ms/self.rs)**0.5
 		self.v_esc=2.**0.5*((self.ms/self.rs)+np.array([4.*np.pi*log_integral(rr, self.rs[-1], self.rs, self.rs*self.rhos) for rr in self.rs]))**0.5
 		self.etas=np.linspace(0.7, 10, 100)
@@ -184,7 +191,7 @@ class ModeAnalyzer(object):
 		for nn in self.ns:
 			for ll in ls:
 				ff=ModeBase+'{0:+d}.l{1}.txt'.format(nn,ll)
-				self.modes_dict[str(nn)+'_'+str(ll)]=get_mode_info(ff, IUS(self.rs, self.rhos))
+				self.modes_dict[str(nn)+'_'+str(ll)]=get_mode_info(ff, self.rs, self.rhos, self.ms, self.gs)
 
 	def tidal_coupling_alpha(self, key, m):
 		'''
