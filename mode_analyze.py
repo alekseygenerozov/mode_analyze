@@ -1,22 +1,22 @@
-from scipy.interpolate import InterpolatedUnivariateSpline as IUS
-# import mesa_reader
-
-import subprocess
-import astropy.units as u
-import cgs_const as cgs
-from astropy.io import ascii
-import astropy.constants as const
 import numpy as np
 import math
-
-import mesa_reader
+from scipy.interpolate import InterpolatedUnivariateSpline as IUS
 from scipy.special import airy
+
+import subprocess
+import mesa_reader
+
+import astropy.units as u
+from astropy.io import ascii
+import astropy.constants as const
 
 import os
 np.seterr(invalid='raise')
 #u.seterr(invalid='raise')
 
+G=const.G.cgs.value
 
+##Auxillary mathematical functions for integration and interpolation
 def log_interp(x, xs, ys, **kwargs):
 	return np.exp(IUS(np.log(xs),np.log(ys), **kwargs)(np.log(x)))
 	
@@ -34,9 +34,10 @@ def integral(x1, x2, xs, ys):
 
 def prep_mesa(base):
 	'''
-	Prepare mesa model for use with the ModeAnalyzer class below
+	Extract relevant information from MESA model for use with the ModeAnalyzer class below
 
-	Explicitly put units in...
+	base--location of the mesa model
+	
 	'''
 	ld=mesa_reader.MesaLogDir(base+'/LOGS')
 	pidx=mesa_reader.MesaProfileIndex(base+'/LOGS/profiles.index')
@@ -64,16 +65,12 @@ def to_str_vec(v):
 	out=out+"}"
 	return out
 
-def I(y, l, m):
-	y_str=to_str_vec(y)
-	tmp=bash_command('./IApprox "{0}" {1} {2}'.format(y_str, int(l), int(m))).lstrip('List(')
-	tmp=tmp.replace(')', '')
-	tmp=tmp.strip()
-
-	tmp=np.array(tmp.split(',')).astype(float)
-	return tmp
-
 def I2(y, l, m):
+	'''
+	Auxiliary function appearing in tidal coupling constants
+
+	Press and Teukolsky equations 44-50.
+	'''
 	if m==0:
 		if l==0:
 			return np.pi*(2.**(1./2.)*y)**(-1./3.)*airy((2**(1./2.)*y)**(2./3.))[0]
@@ -110,17 +107,21 @@ def get_mode_info(mode_file, rs, dens,  ms1, gs1):
 	'''
 	Extract frequency and multipole order of the mode from GYRE output. Second argument is
 	intepolation function, which contains the the density profile of the model. 
+
+	Only deals with adiabatic gyre output so far, so assume xis and omegas are real...
+
+	mode_file -- file with info on stellar modes
+	rs, dens, ms1, gs1--radii, densities, enclosed mass, gravitational acceleration (G menc(r)/r^2)
 	'''
 	mode_dict={}
 	mode_info=ascii.read(mode_file,header_start=1, data_end=3)
 	mode_dict['omega']=float(mode_info['Re(omega)'])
-	assert mode_info['Im(omega)']==0.
 	mode_dict['l']=float(mode_info['l'])
 	 
 	dat_mode=ascii.read(mode_file, data_start=5, header_start=4)
 	xs=dat_mode['x']
 	##Make sure grid for mode file is consistent with that from stellar model.
-	##Take second radus in case first one is zero
+	##Take second radius in case first one is zero
 	filt=(xs>=rs[1])
 	xs=xs[filt]
 	rhos=IUS(rs, dens)(xs)
@@ -129,24 +130,19 @@ def get_mode_info(mode_file, rs, dens,  ms1, gs1):
 	aux=IUS(rs[1:], (rs[1:]**4./gs1[1:])).derivative(1)(xs)
 
 	xi_r=dat_mode['Re(xi_r)'][filt]
-	xi_ri=dat_mode['Im(xi_r)'][filt]
 	xi_h=dat_mode['Re(xi_h)'][filt]
-	xi_hi=dat_mode['Im(xi_h)'][filt]
-	if np.any(np.abs(xi_ri)>0):
-		print np.max(np.abs(xi_ri[1:]/xi_r[1:]))
-	if np.any(np.abs(xi_hi)>0):	
-		print np.max(np.abs(xi_hi[1:]/xi_h[1:]))
-	#assert np.all(dat_mode['Im(xi_h)']==0.)
-	# norm1=IUS(xs, rhos*xs**2.*(xi_r**2.+xi_ri**2.)).integral(xs[0], xs[-1])
-	# norm2=(mode_dict['l']+1.)*mode_dict['l']*IUS(xs, rhos*xs**2.*(xi_h**2.+xi_hi**2.)).integral(xs[0], xs[-1])
+
+	##Normalizing the eigenmodes 
 	norm1=IUS(xs, rhos*xs**2.*xi_r**2.).integral(xs[0], xs[-1])
 	norm2=(mode_dict['l']+1.)*mode_dict['l']*IUS(xs, rhos*xs**2.*xi_h**2.).integral(xs[0], xs[-1])
 	norm=(norm1+norm2)**0.5
 	xi_r=xi_r/norm
 	xi_h=xi_h/norm
 	
+	##Standard expression for Mode overlap integral from Press&Teukolsky1977.
 	if mode_dict['omega']>0.5:
 		mode_dict['Q']=abs(IUS(xs, xs**2*rhos*mode_dict['l']*(xs**(mode_dict['l']-1.))*(xi_r+(mode_dict['l']+1.)*xi_h)).integral(xs[0], xs[-1]))
+	##Use eq. 78 from Ivanov, Papalaziou, Chernov 2013 for low frequencies as this is more numerically stable
 	else:
 		mode_dict['Q']=mode_dict['omega']**2.*abs(IUS(xs, xs**4.*rhos*(xi_r/gs+(xi_h/xs**3.)*aux)).integral(xs[0], xs[-1]))	
 
@@ -162,11 +158,14 @@ class ModeAnalyzer(object):
 		Class storing information about stellar oscillation modes for a given stellar 
 		model (stored in StellarModel--which must have a density, mass, and sound speed profile...)
 		'''
+		##Stellar mass and radius
 		M=np.max(StellarModel.mass)
 		R=np.max(StellarModel.R)
 		self.M=M
 		self.R=R
 
+		##Densities, radial grid and mass coordinate inside of stellar model--normalized to natural units
+		##(e.g. density is in units of M*/R*^3) 
 		self.rhos=(StellarModel.Rho/(M/R**3.)).cgs
 		self.rs=(StellarModel.R/R).cgs
 		self.ms=(StellarModel.mass/M).cgs
@@ -174,6 +173,7 @@ class ModeAnalyzer(object):
 		self.cs=(((5./3.)*StellarModel.P/StellarModel.Rho)**0.5/(const.G*M/R)**0.5).cgs
 		##Escape velocity considering only layers below...
 		
+		##Sort data in order of increasing radius
 		order=np.argsort(self.rs)
 		self.rhos=self.rhos[order]
 		self.cs=self.cs[order]
@@ -195,7 +195,7 @@ class ModeAnalyzer(object):
 
 	def tidal_coupling_alpha(self, key, m):
 		'''
-		Tidal coupling constant for a particular mode for a fixed grid of etas.
+		Tidal coupling constant for a particular mode for grid of etas.
 		'''
 		keyb='T_{0}_{1}'.format(key, m)
 		if not keyb in self.cache:
@@ -211,6 +211,8 @@ class ModeAnalyzer(object):
 	def tidal_coupling(self, l):
 		'''
 		Tidal coupling constant (see e.g. Stone, Kuepper and Ostriker 2016) 
+
+		Also keep track of what fraction of energy goes into f, p, and g-modes.
 		'''
 		if not hasattr(self, 'T_'+str(l)):
 			setattr(self, 'T_'+str(l), np.zeros(len(self.etas)))
@@ -397,14 +399,14 @@ class ModeAnalyzer(object):
 		return self.rs, [IUS(self.rs, -ud*(g+1.)/2.*(Lmax/Lmaxi)**0.5/self.cs).integral(ri, rr) for rr in self.rs]
 	
 
-
+##Classes to store info about polytopic models
 class n32_poly(object):
 	def __init__(self):
 		dat_poly=np.genfromtxt(os.path.join(os.path.dirname(__file__), 'poly32.tsv'))
 		self.R=u.Quantity(dat_poly[:,0])
 		self.Rho=u.Quantity(dat_poly[:,1])
 		self.mass=u.Quantity([IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R])
-		self.cs=u.Quantity((0.53*(5./3.)*(self.Rho/self.Rho[0])**(2./3.))**0.5*(cgs.G*self.mass[-1]/self.R[-1])**0.5)
+		self.cs=u.Quantity((0.53*(5./3.)*(self.Rho/self.Rho[0])**(2./3.))**0.5*(G*self.mass[-1]/self.R[-1])**0.5)
 		self.P=u.Quantity(self.cs**2.*self.Rho/(5./3.))
 
 class n3_poly(object):
@@ -413,5 +415,5 @@ class n3_poly(object):
 		self.R=u.Quantity(dat_poly[:,0])
 		self.Rho=u.Quantity(dat_poly[:,1])
 		self.mass=u.Quantity([IUS(self.R, 4.0*np.pi*self.R**2.*self.Rho).integral(self.R[0], rr) for rr in self.R])
-		self.cs=u.Quantity((0.85*(5./3.)*(self.Rho/self.Rho[0])**(1./3.))**0.5*(cgs.G*self.mass[-1]/self.R[-1])**0.5)
+		self.cs=u.Quantity((0.85*(5./3.)*(self.Rho/self.Rho[0])**(1./3.))**0.5*(G*self.mass[-1]/self.R[-1])**0.5)
 		self.P=u.Quantity(self.cs**2.*self.Rho/(5./3.))

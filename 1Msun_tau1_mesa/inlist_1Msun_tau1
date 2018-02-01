@@ -1,0 +1,43 @@
+! inlist to evolve a 15 solar mass star
+
+! For the sake of future readers of this file (yourself included),
+! ONLY include the controls you are actually using.  DO NOT include
+! all of the other controls that simply have their default values.
+
+&star_job
+
+  ! begin with a pre-main sequence model
+    create_pre_main_sequence_model = .false.
+
+  ! save a model at the end of the run
+    save_model_when_terminate = .true.
+    save_model_filename = '1M.mod'
+
+  ! display on-screen plots
+    pgstar_flag = .true.
+
+
+  ! write pulsation info in format readable by gyre...
+  save_pulse_data_when_terminate = .true.
+  save_pulse_data_filename = '1Msun.mesa'
+  relax_to_this_tau_factor = 1
+
+/ !end of star_job namelist
+
+
+&controls
+  ! starting specifications
+    initial_mass = 1.0 ! in Msun units
+
+  ! stop when the star nears ZAMS (Lnuc/L > 0.99)
+    Lnuc_div_L_zams_limit = 0.99d0
+    stop_near_zams = .false.
+    max_age = 4.4d9
+
+  ! stop when the center mass fraction of h1 drops below this limit
+  ! xa_central_lower_limit_species(1) = 'h1'
+  ! xa_central_lower_limit(1) = 1d-3
+
+
+   pulse_data_format = 'GYRE'
+/ ! end of controls namelist

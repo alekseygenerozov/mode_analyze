@@ -1,0 +1,50 @@
+&constants
+/
+
+&model
+	model_type = 'EVOL'
+	file = '1Msun.mesa'
+	file_format = 'MESA'
+/
+
+&mode
+	l = 2
+	tag = 'l=2'
+/
+
+&osc
+/
+
+&num
+/
+
+
+&scan
+        grid_type = 'INVERSE'
+        freq_min = 0.5
+        freq_max = 20
+        n_freq = 200
+        tag_list = 'l=2'
+/
+
+
+
+&grid
+    n_inner = 5
+    alpha_osc = 10
+    alpha_exp = 2
+/
+
+&ad_output
+	summary_file = '1Msun.txt'
+	summary_file_format = 'TXT'
+	summary_item_list = 'l,n_pg,n_p,n_g,omega,E_norm'
+        mode_template = '1Msun.n%n.l%l.txt'                		! File-name template for mode files
+	mode_file_format = 'TXT'                   		! Format of mode files
+        mode_item_list = 'l,n_pg,omega,x,xi_r,xi_h'   		! Items to appear in mode files
+/	
+
+
+&nad_output
+/
+
